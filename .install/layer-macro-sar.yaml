@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Function to publish SSL certificates expiry to CW Metrics.
+
+Transform:
+  - AWS::Serverless-2016-10-31
+
+Metadata:
+  Maintainer: john@compose-x.io
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Parameters:
+          - LambdaLayerVersionArn
+        Label:
+          default: Lambda Settings
+      - Parameters:
+          - PermissionsBoundary
+        Label:
+          default: IAM Settings
+
+
+Parameters:
+  PermissionsBoundary:
+    Type: String
+    Default: none
+    Description: IAM Policy ARN to use for PermissionsBoundary if required. Optional.
+
+  LambdaLayerVersionArn:
+    Type: String
+    Default: none
+    Description: Whether you want to use a different lambda layer for the Functions. Optional. Not recommended.
+
+  Hosts:
+    Type: String
+
+  HostsScanRateInHours:
+    Type: Number
+    Default: 4
+    MinValue: 2
+
+  HostsDelimiter:
+    Type: String
+    Default: ","
+
+  FunctionsPrefix:
+    Type: String
+    Default: none
+
+Conditions:
+  PermissionsBoundaryCon: !Not [!Equals [!Ref PermissionsBoundary, "none"]]
+  OverrideLayerVersion: !Not [!Equals [!Ref LambdaLayerVersionArn, "none"]]
+  OverrideFunctionName: !Not [!Equals [!Ref FunctionsPrefix, "none"]]
+
+Resources:
+  ###############################################
+  # Layer
+
+  Layer:
+    DependsOn:
+      - Role
+    Type: AWS::Serverless::LayerVersion
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      CompatibleRuntimes:
+        - python3.10
+      ContentUri: ${S3_LAYER_UPLOAD_PATH}
+      Description: ssl_expiry_monitor
+      LayerName: ssl_expiry_monitor
+      LicenseInfo: MIT
+
+  # Function
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Condition:
+              Bool:
+                aws:SecureTransport: 'true'
+            Effect: Allow
+            Principal:
+              Service:
+                - !Sub 'lambda.${AWS::URLSuffix}'
+        Version: '2012-10-17'
+      Policies:
+        - PolicyName: CWMetricsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: "AllowCWAccess"
+                Action:
+                  - "cloudwatch:PutMetricData"
+                Effect: Allow
+                Resource:
+                  - "*"
+
+      Description: !Sub 'SSLExpiryMonitor-${AWS::StackName}'
+      PermissionsBoundary: !If
+        - PermissionsBoundaryCon
+        - !Ref PermissionsBoundary
+        - !Ref AWS::NoValue
+
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Tags:
+        Name: SSLExpiryMonitor
+        Source: https://github.com/JohnPreston/ssl_expiry_monitor
+      FunctionName: !If
+        - OverrideFunctionName
+        - !Sub '${FunctionsPrefix}-SSLExpiryMonitor'
+        - SSLExpiryMonitor
+      Runtime: python3.10
+      Environment:
+        Variables:
+          HOSTS_DELIMITER: !Ref HostsDelimiter
+          HOSTS: !Ref Hosts
+      Handler: index.lambda_handler
+      Timeout: 120
+      Role: !GetAtt Role.Arn
+      Events:
+        Planned:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Sub 'rate(${HostsScanRateInHours} hours)'
+      Layers:
+        - Fn::If:
+            - OverrideLayerVersion
+            - !Ref LambdaLayerVersionArn
+            - !Ref Layer
+      InlineCode: |
+        #!/usr/bin/env python
+
+        from os import environ
+        from compose_x_common.compose_x_common import set_else_none
+        from compose_x_common.aws import get_session
+        from ssl_expiry_monitor import report_expiry_metrics
+
+
+        def lambda_handler(event: dict, context: dict):
+            """Lambda Function handler"""
+            hosts = set_else_none("Hosts", event, environ.get("HOSTS", ""))
+            if isinstance(hosts, str):
+                hosts = hosts.split(environ.get("HOSTS_DELIMITER", ","))
+            if not hosts:
+                return None
+            session = get_session()
+            namespace = set_else_none(
+                "CloudwatchNamespace",
+                event,
+                environ.get("CLOUDWATCH_NAMESPACE", "SSLExpiryMonitor"),
+            )
+            report_expiry_metrics(hosts, namespace, session)
