@@ -126,6 +126,7 @@ Resources:
           Type: ScheduleV2
           Properties:
             ScheduleExpression: !Sub 'rate(${HostsScanRateInHours} hours)'
+            RoleArn: !GetAtt FunctionPlannedRole.Arn
       Layers:
         - Fn::If:
             - OverrideLayerVersion
@@ -154,3 +155,31 @@ Resources:
                 environ.get("CLOUDWATCH_NAMESPACE", "SSLExpiryMonitor"),
             )
             report_expiry_metrics(hosts, namespace, session)
+
+
+  FunctionPlannedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - !Sub scheduler.${AWS::URLSuffix}
+      Policies:
+        - PolicyName: FunctionPlannedLambdaPolicy
+          PolicyDocument:
+            Statement:
+              - Action: lambda:InvokeFunction
+                Effect: Allow
+                Resource:
+                  Fn::GetAtt:
+                    - Function
+                    - Arn
+      PermissionsBoundary: !If
+        - PermissionsBoundaryCon
+        - !Ref PermissionsBoundary
+        - !Ref AWS::NoValue
