@@ -14,7 +14,7 @@ from compose_x_common.compose_x_common import chunked_iterable, set_else_none
 
 __author__ = """John Preston"""
 __email__ = "john@compose-x.io"
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 
 HOSTNAME_RE = re.compile(

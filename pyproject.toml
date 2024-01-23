@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ssl_expiry_monitor"
-version = "0.0.1"
+version = "0.1.0"
 description = "Lambda Function (Script) to Report on hosts SSL expiry"
 authors = ["johnpreston <john@compose-x.io>"]
 license = "MPL-2.0"
@@ -54,7 +54,7 @@ omit = [
 github_url = "https://github.com/johnpreston/ssl_expiry_monitor"
 
 [tool.tbump.version]
-current = "0.0.1"
+current = "0.1.0"
 regex = '''
   (?P<major>\d+)
   \.
