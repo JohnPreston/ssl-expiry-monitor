@@ -22,7 +22,7 @@ pyopenssl = "^23.1.1"
 [tool.poetry.group.dev.dependencies]
 cleanpy = "^0.4.0"
 pyclean = "^2.7.0"
-black = "^23.3"
+black = ">=23.3,<25.0"
 isort = "^5.9.3"
 coverage = "^7.2"
 pytest = "^7.2"
